@@ -1,4 +1,9 @@
 #iChannel0 "file://textures/plywood_small.jpg"
+#include "/utils/structures.glsl"
+#include "/utils/pbr.glsl"
+#include "/utils/dist_func.glsl"
+// include pathをミスると真っ暗になるので注意。
+
 precision mediump float;
 uniform float time;
 uniform vec2 resolution;
@@ -7,44 +12,13 @@ uniform vec2 mouse;
 #define SIZE_OF_OBJS_ARRAY 10
 //このSIZEがでかすぎると貧弱GPUだとメモリクラッシュしてエラーもなく真っ黒になるので注意。気づきにくいのでかなりしんどい。
 
-struct Material{
-    vec3 albedo;
-    vec3 f0;
-    float roughness;
-    int kind;
-};
-
-struct Light{
-    vec3 power;
-    vec3 pos;
-    vec3 rot;
-    int kind;
-};
-
-struct Object{
-    vec3 pos;
-    vec3 rot;
-    int kind;
-    float[4] params;
-    Material material;
-};
-
-struct Camera{
-    vec3 pos;
-    float fov;
-    vec3 lookAt;
-    vec3 up;
-};
-
 
 vec3 calc_ray(in Camera cam,in float x,in float z);
 float distance_func(in Object obj,in vec3 rayhead);
 vec3 calc_norm(in Object obj,in vec3 hitpos);
 vec3 material_color(in Material mat,in vec3 n,in vec3 v,in vec3 l);
 void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec);
-float pbr_D(in Material mat,in vec3 n,in vec3 h);
-float pbr_V(in Material mat, in vec3 n,in vec3 v,in vec3 l);
-vec3 pbr_F(in Material mat, in vec3 l,in vec3 h);
+
 
 void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,out int hitnum,out bool ishit,out vec3 hitpos);
 //inonutで渡さないと参照代入したいやつに関数内で代入が行われないと、mainで代入した値じゃなく各型ごとの初期値が勝手に代入されてバグる。
@@ -54,14 +28,13 @@ void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,o
 
 
 
-const float PI = 3.1415926535;
+
 const int obj_num = 2;
 const int reflection_num = 3;
 
 
 void main(){
-
-    // vec2 st = (gl_FragCoord.xy-resolution.xy)/resolution.xy;//これですでに-1〜1になってる。
+    const float PI = 3.1415926535;
     vec2 st = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);
     float st_x = st.x;
     float st_z = st.y;
@@ -176,24 +149,22 @@ void raymarching(in vec3 origin,in vec3 ray,in Object[SIZE_OF_OBJS_ARRAY] objs,o
 
 vec3 calc_ray(in Camera cam,in float x,in float z){
     vec3 side = normalize(cross(cam.lookAt,cam.up));
-
     return normalize(sin(cam.fov)*x*side+cos(cam.fov)*cam.lookAt+sin(cam.fov)*z*cam.up);
 }
 
 float distance_func(in Object obj,in vec3 rayhead){
     vec3 p = rayhead-obj.pos;
     if (obj.kind == 1){
-        return length(p)-obj.params[0];
+        //sphere
+        return sphere_df(p,obj.params[0]);
     }else if (obj.kind==2){
         // box
-        p = abs(p)-vec3(obj.params[0],obj.params[1],obj.params[2]);
-        return length(max(p,0.0)) + min(max(p.x,max(p.y,p.z)),0.0);
+        return box_df(p,vec3(obj.params[0],obj.params[1],obj.params[2]));
     }
 }
 
 vec3 calc_norm(in Object obj,in vec3 hitpos){
     float eps = 0.001;
-    // return normalize(vec3(1.0,1.0,1.0));
     return normalize(
         vec3(
             distance_func(obj,hitpos+vec3(eps,0.0,0.0))-distance_func(obj,hitpos+vec3(-eps,0.0,0.0)),
@@ -204,13 +175,14 @@ vec3 calc_norm(in Object obj,in vec3 hitpos){
 }
 
 vec3 material_color(in Material mat,in vec3 n,in vec3 v,in vec3 l){
+    const float PI = 3.1415926535;
     if(mat.kind==1){
         return mat.albedo/PI;
     }else if(mat.kind == 2){
         vec3 h = normalize(l+v);
-        float pbr_d = pbr_D(mat,n,h);
-        float pbr_v = pbr_V(mat,n,v,l);
-        vec3 pbr_f = pbr_F(mat,l,h);
+        float pbr_d = pbr_D(mat.roughness,n,h);
+        float pbr_v = pbr_V(mat.roughness,n,v,l);
+        vec3 pbr_f = pbr_F(mat.f0,l,h);
         vec3 diff = mat.albedo/PI;
         return (vec3(1.0)-pbr_f)*diff+pbr_d*pbr_f*pbr_v;
     }
@@ -223,28 +195,7 @@ void calc_light(in Light light,in vec3 hitpos,inout vec3 light_vec){
 }
 
 
-float pbr_D(in Material mat,in vec3 n,in vec3 h){
-    float al2 = mat.roughness*mat.roughness*mat.roughness*mat.roughness;
-    float dotNH2 = dot(n,h)*dot(n,h);
-    float base = PI*((dotNH2*(al2-1.0)+1.0)*(dotNH2*(al2-1.0)+1.0));
-    return clamp(al2/base,0.0,1.0);
-}
-float pbr_V(in Material mat, in vec3 n,in vec3 v,in vec3 l){
-    float al2 = mat.roughness*mat.roughness*mat.roughness*mat.roughness;
-    float dotNL = dot(n,l);
-    float dotNV = dot(n,v);
 
-    float base1 = dotNV*sqrt(dotNL*dotNL*(1.0-al2)+al2);
-    float base2 = dotNL*sqrt(dotNV*dotNV*(1.0-al2)+al2);
-
-    return clamp(0.5/(base1+base2),0.0,1.0);
-}
-vec3 pbr_F(in Material mat, in vec3 l,in vec3 h){
-    float dotLH = dot(l,h);
-    float hoge = pow((1.0-dotLH),5.0);
-
-    return clamp(mat.f0+(vec3(1.0)-mat.f0)*hoge,0.0,1.0);
-}
 
 
 //     mat3 m = mat3(

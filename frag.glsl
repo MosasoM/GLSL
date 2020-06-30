@@ -61,7 +61,7 @@ void main(){
     cam.pos = vec3(0.0,0.0,5.0);
     cam.fov = (PI*30.0)/(2.0*180.0);
     cam.lookAt = normalize(vec3(0.0,1.0,0.0));
-    cam.up = normalize(vec3(0.0,0.0,1.0));
+    cam.up = normalize(vec3(0.0,0.0,1.0)); //上方向がどっちか指示しとけばnormalize取るのでlookatとupが平行四辺形になっても大丈夫。
     cam.lookAt = normalize(vec3(0.0,15.0,0.0)-cam.pos);
 
     Object objs[SIZE_OF_OBJS_ARRAY];

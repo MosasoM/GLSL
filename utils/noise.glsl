@@ -1,4 +1,7 @@
- 
+ //noiseで生成された地形に対してraymarchingするときは、固定長でレイを進めて交差点を求めると良い。
+ //この時カメラ近くはレイを小さく、遠くは大きくすすめることで手前は詳細に、奥はざっくりと表示されていい感じの結果になる
+ //交点は山に埋まる前後を線形補間するとより正確になる。
+
  //3D value noise
  vec4 noised( in vec3 x )
  {
@@ -38,22 +41,21 @@
                                  k3 + k6*u.x + k5*u.y + k7*u.x*u.y ) );
  }
 
+// gradientノイズの場合のhashは0〜1じゃなくて-1〜1の値を返さないといけないことに注意
 //2d gradient noise
- vec3 noised( in vec2 x )
+vec3 noised( in vec2 p )
 {
     vec2 i = floor( p );
     vec2 f = fract( p );
 
-    vec2 u = f*f*f*(f*(f*6.0-15.0)+10.0);//補完関数
+    vec2 u = f*f*f*(f*(f*6.0-15.0)+10.0);
     vec2 du = 30.0*f*f*(f*(f-2.0)+1.0);
     
-    //周囲に点を置いて、その点から生成される微分値を取得する。
     vec2 ga = hash( i + vec2(0.0,0.0) );
     vec2 gb = hash( i + vec2(1.0,0.0) );
     vec2 gc = hash( i + vec2(0.0,1.0) );
     vec2 gd = hash( i + vec2(1.0,1.0) );
     
-    //微分値×移動距離のdotを取ることで真ん中の値の値のノイズ値を補完して求めようとする
     float va = dot( ga, f - vec2(0.0,0.0) );
     float vb = dot( gb, f - vec2(1.0,0.0) );
     float vc = dot( gc, f - vec2(0.0,1.0) );
@@ -63,6 +65,7 @@
                  ga + u.x*(gb-ga) + u.y*(gc-ga) + u.x*u.y*(ga-gb-gc+gd) +  // derivatives
                  du * (u.yx*(va-vb-vc+vd) + vec2(vb,vc) - va));
 }
+
 
 //3D Gradient noise。もはやなにもわからん。
 vec4 noised( in vec3 x )

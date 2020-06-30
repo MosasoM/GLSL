@@ -40,14 +40,16 @@ void main(){
     float st_z = st.y;
 
     Light dlight;
-    dlight.power = vec3(3.0);
+    dlight.power = vec3(5.0);
     dlight.kind = 1;
 
     Material mate1;
     Material mate2;
 
-    mate1.albedo = vec3(0.1,0.5,0.1);
-    mate2.albedo = vec3(0.9,0.9,0.9);
+    mate1.albedo = vec3(0.0,0.2,0.0);
+    mate2.albedo = vec3(0.2,0.2,0.2);
+    //albedoは〜0.2くらいにするべし(global illuminationの反射がおかしくなるらしい)
+    //暗いときはalbedoじゃなくてlightをいじる。
     mate1.f0 = vec3(0.1,0.1,0.1);
     mate2.f0 = vec3(0.6,0.6,0.6);
     mate1.roughness = 0.6;
@@ -91,11 +93,11 @@ void main(){
     vec3 light_col;
     raymarching(origin,ray,objs,hitnum,ishit,hitpos);
 
-    if (hitnum == 0){
-        vec2 hp = vec2(mod(hitpos.x,1.0),mod(hitpos.y,1.0));
-        vec4 tex = texture2D(iChannel0,hp);
-        objs[0].material.albedo = vec3(tex.x,tex.y,tex.z);
-    }
+    // if (hitnum == 0){
+    //     vec2 hp = vec2(mod(hitpos.x,1.0),mod(hitpos.y,1.0));
+    //     vec4 tex = texture2D(iChannel0,hp);
+    //     objs[0].material.albedo = vec3(tex.x,tex.y,tex.z);
+    // }
     if (ishit){
         for (int j = 0; j < obj_num; ++j){
             if (j == hitnum){
@@ -104,8 +106,22 @@ void main(){
                 norm = calc_norm(objs[j],hitpos);
                 brdf = material_color(objs[j].material,norm,view,light_vec);
                 light_col = dlight.power*clamp(dot(norm,light_vec),0.0,0.95);
-                light_col = light_col+vec3(0.5);
-                gl_FragColor = vec4(light_col*brdf,1.0);
+                light_col = light_col+vec3(0.05);
+                vec3 tempcol = light_col*brdf;
+                // gamma correction
+                //これやったほうがフォトリアルになる
+                //これかけた後はambient lightは小さめのほうがうまくいく。
+                //トーンマップはやるとよしだがだるいらしい。
+                //ambient occulusionは必須らしいので実装しましょう…
+                //太陽というかkey lightにはambient occlusionを適用してはならない(それはそう(ambient光だけにつかうのがよし))
+                //vec3 cshadow = pow( vec3(shadow), vec3(1.0, 1.2, 1.5) );
+                //↑日の出とかひの入りでオレンジっぽくなった影を表現するのに使えるらしい。
+                //skylightは青系で真上からのdirectional lightで0.2くらいで弱めにぶちこんどけばいいっぽ
+                //skylightにも適当なocculusionをかますがよし。
+                //最後に太陽からの反射光を足す。これは垂直面反射を考えて、太陽を地面と平行にコピーするイメージで良い。
+
+                tempcol = pow(tempcol,vec3(1.0/2.2));
+                gl_FragColor = vec4(tempcol,1.0);
             break;
             }
         }

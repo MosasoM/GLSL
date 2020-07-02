@@ -74,10 +74,11 @@ float fbm( in vec2 x, in float H )
     float f = 1.0;
     float a = 1.0;
     float t = 0.0;
-    const int numOctaves = 20;
+    const int numOctaves = 8;
     for( int i=0; i<numOctaves; i++ )
     {
-        t += a*Gnoise(f*x).x;
+        //t += a*Gnoise(f*x).x;
+        t += a*vNoise2D(f*x);
         //aが係数なので、微分を一緒に出したいときは微分値にもaかけて足しておけばOK
         f *= 2.0;
         //frequencyが二倍.2.01とか1.99とかにするとunnaturalなのが作れるらしい。
@@ -108,8 +109,8 @@ void main(){
 
     //fbm with grad noise silhouette
     vec2 st = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);
-    vec2 expanded = vec2(st.x*2.0,1.0);
+    vec2 expanded = vec2(st.x*0.5+1.0,1.0);
     float k = fbm(expanded,1.0);
-    gl_FragColor = vec4(vec3(step(1.2*k+0.1,st.y)),1.0);
+    gl_FragColor = vec4(vec3(step(1.5*k-2.0,st.y)),1.0);
 
 }

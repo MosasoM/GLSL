@@ -1,10 +1,17 @@
+#iChannel0 "file://textures/grass_path_2_diff_1k.png"
 precision mediump float;
 uniform float time;
 uniform vec2 resolution;
 uniform vec2 mouse;
 
 
-#include "/utils/structures.glsl"
+// #include "/utils/structures.glsl"
+struct Camera{
+    vec3 pos;
+    float fov;
+    vec3 lookAt;
+    vec3 up;
+};
 vec3 calc_ray(in Camera cam,in float x,in float z);
 vec2 D2Rand(in vec2 co);
 float Gnoise(in vec2 p);
@@ -95,7 +102,10 @@ void main(){
         vec3 norm = normalize(vec3(derivs,-1.0));
         vec3 col = vec3(0.0);
 
-        vec3 mt_albedo = (length(derivs)>1.08) ? b_albedo: g_albedo;
+        vec4 tex = texture2D(iChannel0,hitpos.xy/20.0);
+        vec3 mt_albedo = vec3(tex.x*0.8,tex.y*1.3,tex.z*0.8);
+
+        // vec3 mt_albedo = (length(derivs)>1.08) ? b_albedo: g_albedo;
 
 
         vec3 st = hitpos + norm*0.05;

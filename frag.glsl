@@ -4,6 +4,9 @@
 #include "/utils/dist_func.glsl"
 // include pathをミスると真っ暗になるので注意。
 
+//cameraをstructで定義してるけど、ぶっちゃけmat4で定義した
+//やつの方がincludeとか少なくて楽かも。
+
 precision mediump float;
 uniform float time;
 uniform vec2 resolution;

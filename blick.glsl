@@ -51,6 +51,7 @@ float round_box(in vec3 p,in vec3 size,float r);
 float noised( in vec3 x );
 float map(in mat4[obj_num] objs,in vec3 pos);
 int whichhit(in mat4[obj_num] objs,in vec3 hitpos);
+float marching(in mat4[obj_num] objs,in vec3 origin, in vec3 ray);
 
 // float softshadow( in vec3 ro, in vec3 rd, float mint, float maxt, float k )
 // {
@@ -88,32 +89,18 @@ void main(){
     objs[1][0].xyz = vec3(0.0,5.0,-0.4);
     objs[1][2] = vec4(1.0,vec3(2.0,3.0,0.2));//size
 
+    float totdis = marching(objs,cam[0].xyz,ray);//if ishit > 0 is returned;
+    bool ishit = totdis>0.0;
 
-    float max_dis = 100.0;
-    float min_dis = 0.001;
-    float totdis = 0.0;
-    const int max_loop = 100;
-    vec3 rayhead;
-    float dist;
-    bool ishit = false;
-    for (int i = 0; i < max_loop; ++i){
-        rayhead = cam[0].xyz+ray*totdis;
-        dist = map(objs,rayhead);
-
-        ishit = dist<min_dis && totdis <= max_dis;
-
-        if (ishit) break;
-        if (totdis>max_dis) break;
-
-        totdis += dist;
-
-    }
 
     if (ishit){
         vec3 hitpos = cam[0].xyz+totdis*ray;
         vec3 norm = calc_norm(objs,hitpos);
         vec3 lvec = -normalize(vec3(0.5,0.5,-1.0));
         float lpow = clamp(dot(lvec,norm),0.0,1.0);
+
+        float shadow = marching(objs,hitpos+norm*0.02,lvec);
+        lpow = (shadow>0)?lpow:lpow*0.2;
 
         int which = whichhit(objs,hitpos);
         vec3 albedo = (which==0)?vec3(0.2,0.1,0.1):vec3(0.3,0.3,0.3);
@@ -128,6 +115,26 @@ void main(){
     }
 
     
+}
+
+float marching(in mat4[obj_num] objs,in vec3 origin, in vec3 ray){
+    float max_dis = 100.0;
+    float min_dis = 0.001;
+    float totdis = 0.0;
+    const int max_loop = 100;
+    vec3 rayhead;
+    float dist;
+    bool ishit = false;
+    for (int i = 0; i < max_loop; ++i){
+        rayhead = origin+ray*totdis;
+        dist = map(objs,rayhead);
+        ishit = dist<min_dis && totdis <= max_dis;
+        if (ishit) break;
+        if (totdis>max_dis) break;
+        totdis += dist;
+    }
+    float ret = (ishit)?totdis:-1.0;
+    return ret;
 }
 
 vec3 calc_ray(inout mat4 cam,in float x,in float z){

@@ -52,6 +52,8 @@ float noised( in vec3 x );
 float map(in mat4[obj_num] objs,in vec3 pos);
 int whichhit(in mat4[obj_num] objs,in vec3 hitpos);
 float marching(in mat4[obj_num] objs,in vec3 origin, in vec3 ray);
+float smstep(in float x,in float a,in float b);
+float softshadow(in mat4[obj_num] objs,in vec3 origin, in vec3 ray);
 
 // float softshadow( in vec3 ro, in vec3 rd, float mint, float maxt, float k )
 // {
@@ -84,7 +86,7 @@ void main(){
 
     objs[0][0].xyz = vec3(0.0,5.0,0.0);
     objs[0][2] = vec4(0.0,vec3(1.0,0.5,0.2));//size
-    objs[0][3].x=0.04;//round
+    objs[0][3].x=0.08;//round
 
     objs[1][0].xyz = vec3(0.0,5.0,-0.4);
     objs[1][2] = vec4(1.0,vec3(2.0,3.0,0.2));//size
@@ -96,18 +98,36 @@ void main(){
     if (ishit){
         vec3 hitpos = cam[0].xyz+totdis*ray;
         vec3 norm = calc_norm(objs,hitpos);
-        vec3 lvec = -normalize(vec3(0.5,0.5,-1.0));
+        vec3 lvec = normalize(vec3(1.2,-1.5,1.0));
         float lpow = clamp(dot(lvec,norm),0.0,1.0);
-
-        float shadow = marching(objs,hitpos+norm*0.02,lvec);
-        lpow = (shadow>0)?lpow:lpow*0.2;
-
         int which = whichhit(objs,hitpos);
-        vec3 albedo = (which==0)?vec3(0.2,0.1,0.1):vec3(0.3,0.3,0.3);
+        float shadow_fac = 0.0;
+
+        shadow_fac = softshadow(objs,hitpos+norm*0.03,lvec);
+        shadow_fac = 0.3+clamp(shadow_fac,0.05,0.7);
+        lpow = lpow*3.0*shadow_fac;
+        float AO = 0.0;
+        float ao_step=0.01;
+        float ao_length = ao_step;
+        float k = 2.0;
+        for (int i = 0; i < 8; ++i){
+            float d = map(objs,hitpos+ao_length*norm);
+            AO += (ao_length-d)*k;
+        }
+        AO = clamp(1.0-AO,0.0,1.0);
+        lpow *= AO;
+
+
+        
+        vec3 white = vec3(0.23,0.22,0.22);
+        vec3 black = vec3(0.19,0.18,0.18);
+        float stonemix = 1.0-smstep(fbm(hitpos*4.0),-0.3,0.1);
+        vec3 albedo = (which==0)?mix(white,black,stonemix):vec3(0.3,0.3,0.3);
 
         // //どれにヒットしたかの計算はどうしようね。
         //境界付近の扱いだけが困る。
         gl_FragColor = vec4(vec3(lpow)*albedo,1.0);
+        // gl_FragColor = vec4(vec3(lpow),1.0);
         // gl_FragColor = vec4(vec3(1.0),1.0);
 
     }else{
@@ -115,6 +135,28 @@ void main(){
     }
 
     
+}
+float softshadow(in mat4[obj_num] objs,in vec3 origin, in vec3 ray){
+    float max_dis = 100.0;
+    float min_dis = 0.001;
+    float totdis = 0.0;
+    const int max_loop = 100;
+    vec3 rayhead;
+    float dist;
+    bool ishit = false;
+    float ret = 1.0;
+    float k = 4.0;
+    for (int i = 0; i < max_loop; ++i){
+        rayhead = origin+ray*totdis;
+        dist = map(objs,rayhead);
+        if (dist < 0.001) return 0.0;
+        ret = min(ret,k*dist/totdis);
+        ishit = dist<min_dis && totdis <= max_dis;
+        if (ishit) break;
+        if (totdis>max_dis) break;
+        totdis += dist;
+    }
+    return ret;
 }
 
 float marching(in mat4[obj_num] objs,in vec3 origin, in vec3 ray){
@@ -150,11 +192,20 @@ vec3 calc_ray(inout mat4 cam,in float x,in float z){
 float map(in mat4[obj_num] objs,in vec3 pos){
     //複数のオブジェクトに関して距離関数を求めてUnionなり何なりを取るさらなるラッパー
     //言うなればこれが真の距離関数。
+    vec3 p = pos-objs[0][0].xyz;
+    float hoge = round_box(p,objs[0][2].yzw,objs[0][3].x);
     float ret = 1e9;
-    for (int i = 0; i < obj_num; ++i){
-        float d = distance_func(objs[i],pos);
-        ret = min(ret,d);
+    if (hoge>0.1){
+        p = pos-objs[1][0].xyz;
+        float fuga = box_df(p,objs[1][2].yzw);
+        ret = min(fuga,hoge);
+    }else{
+        for (int i = 0; i < obj_num; ++i){
+            float d = distance_func(objs[i],pos);
+            ret = min(ret,d);
+        }
     }
+
     return ret;
 }
 
@@ -173,7 +224,10 @@ float distance_func(in mat4 obj,in vec3 pos){
     vec4 mask = vec4(0.0,1.0,2.0,3.0);
     mask = 1.0-step(0.3,abs(vec4(obj[2].x)-mask));
     // float d1 = box_df(p,obj[2].yzw)+fbm(p*2.0)*0.02;
-    float d1 = round_box(p,obj[2].yzw,obj[3].x)+fbm(p*2.3)*0.06;
+    // float d1 = round_box(p,obj[2].yzw,obj[3].x)+fbm(p*vec3(2.8))*0.03+fbm(p*vec3(100.0,50.0,30.0))*0.002;
+    float d1 = round_box(p,obj[2].yzw,obj[3].x)+fbm(p*vec3(3.0))*0.03;
+    // float d1 = round_box(p,obj[2].yzw,obj[3].x)+fbm(p*vec3(2.0,3.0,5.0))*0.03;
+    //ここのfbmの周期が等方性なのがキモいかも。実際は異方性なので、floatじゃなくてvec3でかけるがよし?→かわらんかったわ。
     float d2 = box_df(p,obj[2].yzw);
     float d3 = 0.0;
     float d4 = 0.0;
@@ -202,11 +256,12 @@ float fbm( in vec3 x)
                       -0.80,  0.36, -0.48,
                       -0.60, -0.48,  0.64 );
 
+    // float Gain = exp2(-1.0);//exp(-H)
     float Gain = exp2(-1.0);//exp(-H)
-    float freq = 1.0;
+    float freq = 2.0;
     float amp = 1.0;
     float ret = 0.0;
-    const int numOctaves = 4;
+    const int numOctaves = 5;
     for( int i=0; i<numOctaves; i++ )
     {
         float n = noised(x);
@@ -254,4 +309,11 @@ float round_box(in vec3 p,in vec3 size,float r){
 
 
     return -1.0+2.0*(k0 + k1*u.x + k2*u.y + k3*u.z + k4*u.x*u.y + k5*u.y*u.z + k6*u.z*u.x + k7*u.x*u.y*u.z);
+ }
+
+ float smstep(in float x,in float a,in float b){
+     if (x < a) return 0.0;
+     if (x > b) return 1.0;
+     float d = (x-a)/(b-a);
+     return d*d*(3.0-2.0*d);
  }

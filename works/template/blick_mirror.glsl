@@ -57,6 +57,7 @@ int whichhit(in mat4[obj_num] objs,in vec3 hitpos);
 float marching(in mat4[obj_num] objs,in vec3 origin, in vec3 ray);
 float smstep(in float x,in float a,in float b);
 float softshadow(in mat4[obj_num] objs,in vec3 origin, in vec3 ray);
+vec3 color_noshadow(in mat4[obj_num] objs,in vec3 origin,in vec3 ray,in float totdis,in vec3 lvec,in vec3 lpow);
 
 float pbr_D(in float roughness,in vec3 n,in vec3 h);
 float pbr_V(in float roughness, in vec3 n,in vec3 v,in vec3 l);
@@ -95,16 +96,23 @@ void main(){
 
     if (ishit){
         vec3 lvec = normalize(vec3(1.2,-1.5,1.0));
-        vec3 lpow = vec3(12.0);
+        vec3 lpow = vec3(10.0);
         vec3 hitpos = cam[0].xyz+ray*totdis;
         vec3 norm = calc_norm(objs,hitpos);
+
+        vec3 ref_vec = normalize(reflect(ray,norm));
+        float totdis2 = marching(objs,hitpos+norm*0.05,ref_vec);
+        bool ishit2 = totdis2>0.0;
+
+        vec3 col2 = (ishit2)?color(objs,hitpos,ref_vec,totdis2,lvec,lpow):vec3(0.0);
 
         vec3 col = color(objs,cam[0].xyz,ray,totdis,lvec,lpow);
         // col = color(objs,cam[0].xyz,ray,totdis,ref_vec,col2);
         //ここのcolorはshadow判定を変えないといけない(反射光はそもそもオブジェクト以来だからどうやってもものにぶつかる。)
         //結構めんどい処理せなあかんかもね。
         //今回はオブジェクト数的に途中の遮蔽がないので、反射光対象以外のオブジェクトにさえぎられるかどうかは考慮しなくて良さそう。
-        // col = pow(col,vec3(1.0/2.2));
+        col += color_noshadow(objs,cam[0].xyz,ray,totdis,ref_vec,col2);
+        
         gl_FragColor = vec4(col,1.0);
         // gl_FragColor = vec4(vec3(hoge),1.0);
         // gl_FragColor = vec4(vec3(ref_vec.y*0.3+0.5),1.0);
@@ -142,9 +150,9 @@ float softshadow(in mat4[obj_num] objs,in vec3 origin, in vec3 ray){
 
 float marching(in mat4[obj_num] objs,in vec3 origin, in vec3 ray){
     float max_dis = 100.0;
-    float min_dis = 0.0001;
+    float min_dis = 0.001;
     float totdis = 0.0;
-    const int max_loop = 200;
+    const int max_loop = 100;
     vec3 rayhead;
     float dist;
     bool ishit = false;
@@ -216,7 +224,7 @@ float distance_func(in mat4 obj,in vec3 pos){
 }
 
 vec3 calc_norm(in mat4 objs[obj_num],in vec3 hitpos){
-    float eps = 0.00001;
+    float eps = 0.0001;
     return normalize(
         vec3(
             map(objs,hitpos+vec3(eps,0.0,0.0))-map(objs,hitpos+vec3(-eps,0.0,0.0)),
@@ -340,7 +348,6 @@ vec3 color(in mat4[obj_num] objs,in vec3 origin,in vec3 ray,in float totdis,in v
         int which = whichhit(objs,hitpos);
         float shadow_fac = 0.0;
         shadow_fac = softshadow(objs,hitpos+norm*0.03,lvec);
-        // shadow_fac = (marching(objs,hitpos+norm*0.03,lvec)>0.0)?0.2:1.0;
         shadow_fac = 0.3+clamp(shadow_fac,0.05,0.7);
         lpow = lpow*shadow_fac*ldot;
         float AO = 0.0;
@@ -360,9 +367,29 @@ vec3 color(in mat4[obj_num] objs,in vec3 origin,in vec3 ray,in float totdis,in v
         float stonemix = 1.0-smstep(fbm(hitpos*4.0),-0.3,0.1);
         mat3 material;
         material[0] = (which==0)?mix(white,black,stonemix):vec3(0.5,0.5,0.5);//albedo
-        material[1] = (which==0)?vec3(0.05,0.05,0.05):vec3(0.1,0.1,0.1);//f0
-        material[2].x = (which==0)?0.3:0.05;//roughness
+        material[1] = (which==0)?vec3(0.05,0.05,0.05):vec3(0.7,0.7,0.7);//f0
+        material[2].x = (which==0)?0.7:0.05;//roughness
 
         vec3 brdf = material_color(material,norm,origin-hitpos,lvec);
         return brdf*lpow;
+    }
+
+vec3 color_noshadow(in mat4[obj_num] objs,in vec3 origin,in vec3 ray,in float totdis,in vec3 lvec,in vec3 lpow){
+        vec3 hitpos = origin + totdis*ray;
+        vec3 norm = calc_norm(objs,hitpos);
+        float ldot = clamp(dot(lvec,norm),0.0,1.0);
+        int which = whichhit(objs,hitpos);
+        lpow = lpow*ldot;
+
+        vec3 white = vec3(0.23,0.22,0.22);
+        vec3 black = vec3(0.19,0.18,0.18);
+        float stonemix = 1.0-smstep(fbm(hitpos*4.0),-0.3,0.1);
+        mat3 material;
+        material[0] = (which==0)?mix(white,black,stonemix):vec3(0.2,0.2,0.2);//albedo
+        material[1] = (which==0)?vec3(0.05,0.05,0.05):vec3(0.9,0.9,0.9);//f0
+        material[2].x = (which==0)?0.7:0.05;//roughness
+
+        vec3 brdf = material_color(material,norm,origin-hitpos,lvec);
+        // return brdf*100.0*lpow;
+        return lpow;
     }
